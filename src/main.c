@@ -18,6 +18,11 @@
 
 #define FRAMEBUFFER_DEVICE "/dev/fb0"
 
+// fd = input device, ev = input event
+int fd = open("/dev/input/event0", O_RDONLY);
+struct input_event ev;
+
+
 int fbfd;
 struct fb_var_screeninfo vinfo;
 struct fb_fix_screeninfo finfo;
@@ -327,47 +332,34 @@ int eventHandler()
     float crankChange = 0.0;
 
     while (1) {
-        crankChange = 0.0;
-
-        // Check for events or input here, such as joystick button presses
-
-        if (startSelectDelay == 0 && crankChange > 2.0f) {
-            gb.direct.joypad_bits.start = 0;
-            startSelectDelay = 30;
-        }
-        else {
-            gb.direct.joypad_bits.start = 1;
-        }
-
-        if (startSelectDelay == 0 && crankChange < -2.0f) {
-            gb.direct.joypad_bits.select = 0;
-            startSelectDelay = 30;
-        }
-        else {
-            gb.direct.joypad_bits.select = 1;
-        }
-
-        PDButtons current;
-        // Get the state of other buttons using Linux framebuffer functions or other means
-
-        if(current) {
-            if ( current & kButtonA ) {
-                gb.direct.joypad_bits.a = 0;
-            }
-            if ( current & kButtonB ) {
-                gb.direct.joypad_bits.b = 0;
-            }
-            if ( current & kButtonUp ) {
-                gb.direct.joypad_bits.up = 0;
-            }
-            if ( current & kButtonDown ) {
-                gb.direct.joypad_bits.down = 0;
-            }
-            if ( current & kButtonLeft ) {
-                gb.direct.joypad_bits.left = 0;
-            }
-            if ( current & kButtonRight ) {
-                gb.direct.joypad_bits.right = 0;
+	    
+        // Get Linux button state
+        while (read(fd, &ev, sizeof(struct input_event)) > 0) {
+            if (ev.type == EV_KEY) {
+                if (ev.code == KEY_J) {
+                    gb.direct.joypad_bits.a = (ev.value == 0) ? 1 : 0;
+                }
+                else if (ev.code == KEY_K) {
+                    gb.direct.joypad_bits.b = (ev.value == 0) ? 1 : 0;
+                }
+                else if (ev.code == KEY_ENTER) {
+                    gb.direct.joypad_bits.start = (ev.value == 0) ? 1 : 0;
+                }
+		else if (ev.code == KEY_SPACE) {
+                    gb.direct.joypad_bits.select = (ev.value == 0) ? 1 : 0;
+                }
+		else if (ev.code == KEY_UP || ev.code == KEY_W) {
+                    gb.direct.joypad_bits.up = (ev.value == 0) ? 1 : 0;
+                }
+                else if (ev.code == KEY_DOWN || ev.code == KEY_S) {
+                    gb.direct.joypad_bits.down = (ev.value == 0) ? 1 : 0;
+                }
+                else if (ev.code == KEY_LEFT || ev.code == KEY_A) {
+                    gb.direct.joypad_bits.left = (ev.value == 0) ? 1 : 0;
+                }
+                else if (ev.code == KEY_RIGHT || ev.code == KEY_D) {
+                    gb.direct.joypad_bits.right = (ev.value == 0) ? 1 : 0;
+                }
             }
         }
 
@@ -461,6 +453,9 @@ void out() {
     // Unmap the framebuffer memory and close the framebuffer device
     munmap(fbp, screensize);
     close(fbfd);
+
+    // Close the input device
+    close(fd);
 }
 
 int main() {
