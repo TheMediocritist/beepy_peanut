@@ -49,28 +49,28 @@ void file_list_callback(const char *filename, void *userdata) {
 }
 
 void rom_list_init() {
-    fb.fd = open("/dev/fb0", O_RDWR);
-    if (fb.fd == -1) {
-        perror("Unable to open framebuffer");
-        exit(1);
-    }
+    //fb.fd = open("/dev/fb0", O_RDWR);
+    //if (fb.fd == -1) {
+    //    perror("Unable to open framebuffer");
+    //    exit(1);
+   // }
 
-    if (ioctl(fb.fd, FBIOGET_FSCREENINFO, &fb.finfo) == -1) {
-        perror("Unable to retrieve framebuffer fixed info");
-        exit(1);
-    }
+    //if (ioctl(fb.fd, FBIOGET_FSCREENINFO, &fb.finfo) == -1) {
+    //    perror("Unable to retrieve framebuffer fixed info");
+    //    exit(1);
+    //}
 
-    if (ioctl(fb.fd, FBIOGET_VSCREENINFO, &fb.vinfo) == -1) {
-        perror("Unable to retrieve framebuffer variable info");
-        exit(1);
-    }
+    //if (ioctl(fb.fd, FBIOGET_VSCREENINFO, &fb.vinfo) == -1) {
+    //    perror("Unable to retrieve framebuffer variable info");
+    //    exit(1);
+    //}
 
-    int screen_size = fb.vinfo.xres * fb.vinfo.yres * fb.vinfo.bits_per_pixel / 8;
-    fb.buffer = (unsigned short *)mmap(0, screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb.fd, 0);
-    if (fb.buffer == MAP_FAILED) {
-        perror("Unable to map framebuffer");
-        exit(1);
-    }
+    //int screen_size = fb.vinfo.xres * fb.vinfo.yres * fb.vinfo.bits_per_pixel / 8;
+    //fb.buffer = (unsigned short *)mmap(0, screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb.fd, 0);
+    //if (fb.buffer == MAP_FAILED) {
+    //    perror("Unable to map framebuffer");
+    //    exit(1);
+    //}
 
     file_list = realloc(NULL, max_files * sizeof(char*));
     file_list[0] = strdup("ROM1.gb");
@@ -155,10 +155,10 @@ char *rom_list_update() {
     return NULL;
 }
 
-int main() {
-    rom_list_init();
-    redraw_menu_screen();
-    // TODO: Add main loop for input handling and screen updating using rom_list_update() and redraw_menu_screen()
-    rom_list_cleanup();
-    return 0;
-}
+//int main() {
+//    rom_list_init();
+//    redraw_menu_screen();
+//    // TODO: Add main loop for input handling and screen updating using rom_list_update() and redraw_menu_screen()
+//    rom_list_cleanup();
+//    return 0;
+//}
