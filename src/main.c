@@ -2,6 +2,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/fb.h>
+#include <sys/mman.h>
 
 #include "rom_list.h"
 
@@ -9,10 +14,16 @@
 #include "minigb_apu/minigb_apu.h"
 #endif
 
-#include "pd_api.h"
 #include "peanut_gb.h"
 
-PlaydateAPI *pd;
+#define FRAMEBUFFER_DEVICE "/dev/fb0"
+
+int fbfd;
+struct fb_var_screeninfo vinfo;
+struct fb_fix_screeninfo finfo;
+char *fbp = 0;
+int screensize;
+
 static uint8_t *FrameBuffer;
 int is_rom_chosen = 0;
 int startSelectDelay = 30;
@@ -79,34 +90,33 @@ void gb_cart_ram_write(struct gb_s *gb, const uint_fast32_t addr,
  */
 uint8_t *read_rom_to_ram(const char *file_name)
 {
-	SDFile *rom_file = pd->file->open(file_name, kFileReadData);
+	FILE *rom_file = fopen(file_name, "rb");
 	size_t rom_size;
 	uint8_t *rom = NULL;
 
 	if(rom_file == NULL)
 		return NULL;
 
-	pd->file->seek(rom_file, 0, SEEK_END);
-	rom_size = pd->file->tell(rom_file);
-    pd->file->seek(rom_file, 0, SEEK_SET);
-	rom = pd->system->realloc(NULL, rom_size);
+	fseek(rom_file, 0, SEEK_END);
+	rom_size = ftell(rom_file);
+	fseek(rom_file, 0, SEEK_SET);
+	rom = malloc(rom_size);
 
-	//if(fread(rom, sizeof(uint8_t), rom_size, rom_file) != rom_size)
-	if(pd->file->read(rom_file, rom, rom_size) != rom_size)
+	if(fread(rom, sizeof(uint8_t), rom_size, rom_file) != rom_size)
 	{
-		if(rom != NULL) pd->system->realloc(rom, 0);
-		pd->file->close(rom_file);
+		if(rom != NULL) free(rom);
+		fclose(rom_file);
 		return NULL;
 	}
 
-    pd->file->close(rom_file);
+	fclose(rom_file);
 	return rom;
 }
 
 void read_cart_ram_file(const char *save_file_name, uint8_t **dest,
 			const size_t len)
 {
-	SDFile *f;
+	FILE *f;
 
 	/* If save file not required. */
 	if(len == 0)
@@ -116,12 +126,12 @@ void read_cart_ram_file(const char *save_file_name, uint8_t **dest,
 	}
 
 	/* Allocate enough memory to hold save file. */
-	if((*dest = pd->system->realloc(NULL, len)) == NULL)
+	if((*dest = realloc(NULL, len)) == NULL)
 	{
-        pd->system->logToConsole("Unable to allocate save file memory.");
+		printf("Unable to allocate save file memory.\n");
 	}
 
-    f = pd->file->open(save_file_name, kFileReadData);
+	f = fopen(save_file_name, "rb");
 	/* It doesn't matter if the save file doesn't exist. We initialise the
 	 * save memory allocated above. The save file will be created on exit. */
 	if(f == NULL)
@@ -131,26 +141,26 @@ void read_cart_ram_file(const char *save_file_name, uint8_t **dest,
 	}
 
 	/* Read save file to allocated memory. */
-    pd->file->read(f, *dest, len);
-	pd->file->close(f);
+	fread(*dest, sizeof(uint8_t), len, f);
+	fclose(f);
 }
 
 void write_cart_ram_file(const char *save_file_name, uint8_t **dest,
 			 const size_t len)
 {
-	SDFile *f;
+	FILE *f;
 
 	if(len == 0 || *dest == NULL)
 		return;
 
-	if((f = pd->file->open(save_file_name, kFileWrite)) == NULL)
+	if((f = fopen(save_file_name, "wb")) == NULL)
 	{
-        pd->system->logToConsole("Unable to open save file.");
+		printf("Unable to open save file.\n");
 	}
 
 	/* Record save file. */
-	pd->file->write(f, *dest, len);
-	pd->file->close(f);
+	fwrite(*dest, sizeof(uint8_t), len, f);
+	fclose(f);
 }
 
 /**
@@ -164,7 +174,7 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 	case GB_INVALID_OPCODE:
 		/* We compensate for the post-increment in the __gb_step_cpu
 		 * function. */
-        pd->system->logToConsole("Invalid opcode");
+		printf("Invalid opcode\n");
 		break;
 
 	/* Ignoring non fatal errors. */
@@ -173,7 +183,7 @@ void gb_error(struct gb_s *gb, const enum gb_error_e gb_err, const uint16_t val)
 		return;
 
 	default:
-        pd->system->logToConsole("Unknown error");
+		printf("Unknown error\n");
 		break;
 	}
 
@@ -210,7 +220,7 @@ void loadRom() {
     /* Copy input ROM file to allocated memory. */
     if((priv.rom = read_rom_to_ram(rom_file_name)) == NULL)
     {
-        pd->system->logToConsole("Error loading ROM");
+        printf("Error loading ROM\n");
         out();
     }
 
@@ -223,11 +233,11 @@ void loadRom() {
 
         /* Allocate enough space for the ROM file name, for the "sav"
          * extension and for the null terminator. */
-        save_file_name = pd->system->realloc(NULL, strlen(rom_file_name) + strlen(extension) + 1);
+        save_file_name = realloc(NULL, strlen(rom_file_name) + strlen(extension) + 1);
 
         if(save_file_name == NULL)
         {
-            pd->system->logToConsole("Error with save file name");
+            printf("Error with save file name\n");
             out();
         }
 
@@ -257,15 +267,15 @@ void loadRom() {
             break;
 
         case GB_INIT_CARTRIDGE_UNSUPPORTED:
-            pd->system->logToConsole("Unsupported cartridge.");
+            printf("Unsupported cartridge.\n");
             out();
 
         case GB_INIT_INVALID_CHECKSUM:
-            pd->system->logToConsole("Invalid ROM: Checksum failure.");
+            printf("Invalid ROM: Checksum failure.\n");
             out();
 
         default:
-            pd->system->logToConsole("Unknown error: %d\n", gb_ret);
+            printf("Unknown error: %d\n", gb_ret);
             out();
     }
 
@@ -278,7 +288,8 @@ void chooseRom() {
     else {
         is_rom_chosen = 1;
 
-        pd->graphics->clear(kColorBlack);
+        // Clear the framebuffer
+        memset(fbp, 0, screensize);
 
         loadRom();
 
@@ -296,10 +307,10 @@ void loadNewRom() {
     if(!is_rom_chosen) return;
     saveGame();
     gb_reset(&gb);
-    if(priv.rom != NULL) pd->system->realloc(priv.rom, 0);
-    if(priv.cart_ram != NULL) pd->system->realloc(priv.cart_ram, 0);
-    if(save_file_name != NULL) pd->system->realloc(save_file_name, 0);
-    if(rom_file_name != NULL) pd->system->realloc(rom_file_name, 0);
+    if(priv.rom != NULL) free(priv.rom);
+    if(priv.cart_ram != NULL) free(priv.cart_ram);
+    if(save_file_name != NULL) free(save_file_name);
+    if(rom_file_name != NULL) free(rom_file_name);
     rom_file_name = NULL;
     save_file_name = NULL;
 #if defined(ENABLE_SOUND_MINIGB)
@@ -309,159 +320,128 @@ void loadNewRom() {
     is_rom_chosen = 0;
 }
 
-#ifdef _WINDLL
-__declspec(dllexport)
-#endif
-int eventHandler(PlaydateAPI* pdapi, PDSystemEvent event, uint32_t arg)
+int eventHandler()
 {
-    (void)arg; // arg is currently only used for event = kEventKeyPressed
-    if ( event == kEventInit ) {
-        pd = pdapi;
-        pd->display->setRefreshRate(50.0f);
+    int retval = 0;
+    unsigned long startSelectDelay = 30;
+    float crankChange = 0.0;
 
-        rom_list_init();
+    while (1) {
+        crankChange = 0.0;
 
-        FrameBuffer = pd->graphics->getFrame();
-        pd->graphics->clear(kColorBlack);
+        // Check for events or input here, such as joystick button presses
 
-        pd->system->addMenuItem("save", saveGame, NULL);
-        pd->system->addMenuItem("reset", reset, NULL);
-        pd->system->addMenuItem("choose rom", loadNewRom, NULL);
-
-        redraw_menu_screen();
-
-        pd->system->setUpdateCallback(update, pd);
-    }
-    if ( event == kEventTerminate ) {
-        quit();
-    }
-
-    return 0;
-}
-
-static int update(void* userdata)
-{
-    if(!is_rom_chosen) {
-        chooseRom();
-        return 1;
-    }
-
-    gb.direct.frame_skip = 1;
-
-    gb.direct.joypad = 255; // Reset all joypad buttons
-
-    startSelectDelay -= 1; // This is a timer that prevents multiple presses of start/select with crank.
-    if(startSelectDelay < 0) startSelectDelay = 0;
-
-    float crankChange = pd->system->getCrankChange();
-
-    if (startSelectDelay == 0 && crankChange > 2.0f) {
-        gb.direct.joypad_bits.start = 0;
-        startSelectDelay = 30;
-    }
-    else {
-        gb.direct.joypad_bits.start = 1;
-    }
-
-    if (startSelectDelay == 0 && crankChange < -2.0f) {
-        gb.direct.joypad_bits.select = 0;
-        startSelectDelay = 30;
-    }
-    else {
-        gb.direct.joypad_bits.select = 1;
-    }
-
-    PDButtons current;
-    pd->system->getButtonState(&current, NULL, NULL);
-
-    if(current) {
-        if ( current & kButtonA ) {
-            gb.direct.joypad_bits.a = 0;
+        if (startSelectDelay == 0 && crankChange > 2.0f) {
+            gb.direct.joypad_bits.start = 0;
+            startSelectDelay = 30;
         }
-        if ( current & kButtonB ) {
-            gb.direct.joypad_bits.b = 0;
+        else {
+            gb.direct.joypad_bits.start = 1;
         }
-        if ( current & kButtonUp ) {
-            gb.direct.joypad_bits.up = 0;
-        }
-        if ( current & kButtonDown ) {
-            gb.direct.joypad_bits.down = 0;
-        }
-        if ( current & kButtonLeft ) {
-            gb.direct.joypad_bits.left = 0;
-        }
-        if ( current & kButtonRight ) {
-            gb.direct.joypad_bits.right = 0;
-        }
-    }
 
-    /* Execute CPU cycles until the screen has to be redrawn. */
-    gb_run_frame(&gb);
+        if (startSelectDelay == 0 && crankChange < -2.0f) {
+            gb.direct.joypad_bits.select = 0;
+            startSelectDelay = 30;
+        }
+        else {
+            gb.direct.joypad_bits.select = 1;
+        }
 
-    if(gb.direct.frame_skip && gb.display.frame_skip_count) {
-        uint16_t xx = 40;
-        uint16_t yy = -1;
-        uint8_t yyRowSkip = 0;
-        uint16_t fbIndex = 0;
-        uint16_t fbIndex2 = 0;
-        for (uint8_t y = 0; y < LCD_HEIGHT - 1; ++y) {
-            if ((y << 1) % 6 == 0) {
-                yyRowSkip = 1;
+        PDButtons current;
+        // Get the state of other buttons using Linux framebuffer functions or other means
+
+        if(current) {
+            if ( current & kButtonA ) {
+                gb.direct.joypad_bits.a = 0;
             }
-            xx = 40;
-            yy += 2 - yyRowSkip;
-            fbIndex = yy * LCD_ROWSIZE + (xx >> 3);
-            fbIndex2 = fbIndex + 52;
-            for (uint8_t x = 0; x < LCD_WIDTH; ++x) {
-                switch (priv.fb[y][x]) {
-                    case 0: // white
-                        FrameBuffer[fbIndex] |= (3 << (6 - (xx & 7)));
-                        FrameBuffer[fbIndex2] |= (3 << (6 - (xx & 7)));
-                        break;
-                    case 1: // light gray
-                            if ((yy & 1) == 0) {
-                                FrameBuffer[fbIndex] |= (1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex] &= ~(1 << (7 - ((xx+1) & 7)));
-                                FrameBuffer[fbIndex2] |= (3 << (6 - (xx & 7)));
-                            }
-                            else {
-                                FrameBuffer[fbIndex] |= (3 << (6 - (xx & 7)));
-                                FrameBuffer[fbIndex2] |= (1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex2] &= ~(1 << (7 - ((xx+1) & 7)));
-                            }
-                        break;
-                    case 2: // dark gray
-                            if ((yy & 1) == 0) {
-                                FrameBuffer[fbIndex] |= (1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex] &= ~(1 << (7 - ((xx+1) & 7)));
-                                FrameBuffer[fbIndex2] &= ~(1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex2] |= (1 << (7 - ((xx+1) & 7)));
+            if ( current & kButtonB ) {
+                gb.direct.joypad_bits.b = 0;
+            }
+            if ( current & kButtonUp ) {
+                gb.direct.joypad_bits.up = 0;
+            }
+            if ( current & kButtonDown ) {
+                gb.direct.joypad_bits.down = 0;
+            }
+            if ( current & kButtonLeft ) {
+                gb.direct.joypad_bits.left = 0;
+            }
+            if ( current & kButtonRight ) {
+                gb.direct.joypad_bits.right = 0;
+            }
+        }
 
-                            }
-                            else {
-                                FrameBuffer[fbIndex] &= ~(1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex] |= (1 << (7 - ((xx+1) & 7)));
-                                FrameBuffer[fbIndex2] |= (1 << (7 - (xx & 7)));
-                                FrameBuffer[fbIndex2] &= ~(1 << (7 - ((xx+1) & 7)));
-                            }
-                        break;
-                    case 3: // black
-                        FrameBuffer[fbIndex] &= ~(3 << (6 - (xx & 7)));
-                        FrameBuffer[fbIndex2] &= ~(3 << (6 - (xx & 7)));
-                        break;
+        /* Execute CPU cycles until the screen has to be redrawn. */
+        gb_run_frame(&gb);
+
+        if(gb.direct.frame_skip && gb.display.frame_skip_count) {
+            uint16_t xx = 40;
+            uint16_t yy = -1;
+            uint8_t yyRowSkip = 0;
+            uint16_t fbIndex = 0;
+            uint16_t fbIndex2 = 0;
+            for (uint8_t y = 0; y < LCD_HEIGHT - 1; ++y) {
+                if ((y << 1) % 6 == 0) {
+                    yyRowSkip = 1;
                 }
+                xx = 40;
+                yy += 2 - yyRowSkip;
+                fbIndex = yy * LCD_ROWSIZE + (xx >> 3);
+                fbIndex2 = fbIndex + 52;
+                for (uint8_t x = 0; x < LCD_WIDTH; ++x) {
+                    switch (priv.fb[y][x]) {
+                        case 0: // white
+                            FrameBuffer[fbIndex] |= (3 << (6 - (xx & 7)));
+                            FrameBuffer[fbIndex2] |= (3 << (6 - (xx & 7)));
+                            break;
+                        case 1: // light gray
+                                if ((yy & 1) == 0) {
+                                    FrameBuffer[fbIndex] |= (1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex] &= ~(1 << (7 - ((xx+1) & 7)));
+                                    FrameBuffer[fbIndex2] |= (3 << (6 - (xx & 7)));
+                                }
+                                else {
+                                    FrameBuffer[fbIndex] |= (3 << (6 - (xx & 7)));
+                                    FrameBuffer[fbIndex2] |= (1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex2] &= ~(1 << (7 - ((xx+1) & 7)));
+                                }
+                            break;
+                        case 2: // dark gray
+                                if ((yy & 1) == 0) {
+                                    FrameBuffer[fbIndex] |= (1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex] &= ~(1 << (7 - ((xx+1) & 7)));
+                                    FrameBuffer[fbIndex2] &= ~(1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex2] |= (1 << (7 - ((xx+1) & 7)));
 
-                xx += 2;
-                if((xx & 7) == 0) { fbIndex += 1; fbIndex2 += 1; };
+                                }
+                                else {
+                                    FrameBuffer[fbIndex] &= ~(1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex] |= (1 << (7 - ((xx+1) & 7)));
+                                    FrameBuffer[fbIndex2] |= (1 << (7 - (xx & 7)));
+                                    FrameBuffer[fbIndex2] &= ~(1 << (7 - ((xx+1) & 7)));
+                                }
+                            break;
+                        case 3: // black
+                            FrameBuffer[fbIndex] &= ~(3 << (6 - (xx & 7)));
+                            FrameBuffer[fbIndex2] &= ~(3 << (6 - (xx & 7)));
+                            break;
+                    }
+
+                    xx += 2;
+                    if((xx & 7) == 0) { fbIndex += 1; fbIndex2 += 1; };
+                }
+                yyRowSkip = 0;
             }
-            yyRowSkip = 0;
+
+            // Update the Linux framebuffer with the modified FrameBuffer data
+            memcpy(fbp, FrameBuffer, screensize);
         }
 
-        pd->graphics->markUpdatedRows(0, LCD_ROWS - 1);
+        // Sleep for a short duration to control the frame rate
+        usleep(1000);
     }
 
-    //pd->system->drawFPS(0,0);
-    return 1;
+    return retval;
 }
 
 void quit() {
@@ -471,10 +451,49 @@ void quit() {
 }
 
 void out() {
-    if(priv.rom != NULL) pd->system->realloc(priv.rom, 0);
-    if(priv.cart_ram != NULL) pd->system->realloc(priv.cart_ram, 0);
-    if(save_file_name != NULL) pd->system->realloc(save_file_name, 0);
-    if(rom_file_name != NULL) pd->system->realloc(rom_file_name, 0);
+    if(priv.rom != NULL) free(priv.rom);
+    if(priv.cart_ram != NULL) free(priv.cart_ram);
+    if(save_file_name != NULL) free(save_file_name);
+    if(rom_file_name != NULL) free(rom_file_name);
 
     rom_list_cleanup();
+
+    // Unmap the framebuffer memory and close the framebuffer device
+    munmap(fbp, screensize);
+    close(fbfd);
+}
+
+int main() {
+    fbfd = open(FRAMEBUFFER_DEVICE, O_RDWR);
+    if (fbfd == -1) {
+        printf("Error opening framebuffer device.\n");
+        return 1;
+    }
+
+    if (ioctl(fbfd, FBIOGET_FSCREENINFO, &finfo) == -1) {
+        printf("Error reading fixed information.\n");
+        return 1;
+    }
+
+    if (ioctl(fbfd, FBIOGET_VSCREENINFO, &vinfo) == -1) {
+        printf("Error reading variable information.\n");
+        return 1;
+    }
+
+    screensize = vinfo.xres * vinfo.yres * vinfo.bits_per_pixel / 8;
+
+    fbp = (char *)mmap(0, screensize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
+    if (fbp == MAP_FAILED) {
+        printf("Error mapping framebuffer memory.\n");
+        return 1;
+    }
+
+    FrameBuffer = malloc(screensize);
+
+    // Initialize the framebuffer with initial data
+
+    // Call eventHandler to start the game loop
+    eventHandler();
+
+    return 0;
 }
