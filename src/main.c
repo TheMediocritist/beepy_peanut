@@ -34,7 +34,7 @@ int screensize;
 static uint8_t *FrameBuffer;
 int is_rom_chosen = 0;
 int startSelectDelay = 30;
-SoundSource *gameSoundSource;
+//SoundSource *gameSoundSource;
 
 struct priv_t
 {
