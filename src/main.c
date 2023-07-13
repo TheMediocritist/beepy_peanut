@@ -18,7 +18,7 @@
 #include "peanut_gb.h"
 
 #define FRAMEBUFFER_DEVICE "/dev/fb0"
-#define LCD_ROWSIZE = 400
+#define LCD_ROWSIZE 400
 
 
 // fd = input device, ev = input event
