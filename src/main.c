@@ -18,11 +18,12 @@
 #include "peanut_gb.h"
 
 #define FRAMEBUFFER_DEVICE "/dev/fb0"
+#define LCD_ROWSIZE = 400
+
 
 // fd = input device, ev = input event
-int fd = open("/dev/input/event0", O_RDONLY);
+// int fd = open("/dev/input/event0", O_RDONLY);
 struct input_event ev;
-
 
 int fbfd;
 struct fb_var_screeninfo vinfo;
@@ -335,6 +336,8 @@ int eventHandler()
     while (1) {
 	    
         // Get Linux button state
+	// fd = input device, ev = input event
+	int fd = open("/dev/input/event0", O_RDONLY);
         while (read(fd, &ev, sizeof(struct input_event)) > 0) {
             if (ev.type == EV_KEY) {
                 if (ev.code == KEY_J) {
