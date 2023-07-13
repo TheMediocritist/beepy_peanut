@@ -22,7 +22,7 @@
 
 
 // fd = input device, ev = input event
-// int fd = open("/dev/input/event0", O_RDONLY);
+int fd;
 struct input_event ev;
 
 int fbfd;
@@ -337,7 +337,7 @@ int eventHandler()
 	    
         // Get Linux button state
 	// fd = input device, ev = input event
-	int fd = open("/dev/input/event0", O_RDONLY);
+	fd = open("/dev/input/event0", O_RDONLY);
         while (read(fd, &ev, sizeof(struct input_event)) > 0) {
             if (ev.type == EV_KEY) {
                 if (ev.code == KEY_J) {
