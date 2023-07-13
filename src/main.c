@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 #include <sys/mman.h>
 
 #include "rom_list.h"
