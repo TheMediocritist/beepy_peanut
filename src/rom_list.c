@@ -85,8 +85,8 @@ void rom_list_cleanup() {
     }
     free(file_list);
 
-    munmap(fb.buffer, fb.vinfo.xres * fb.vinfo.yres * fb.vinfo.bits_per_pixel / 8);
-    close(fb.fd);
+    //munmap(fb.buffer, fb.vinfo.xres * fb.vinfo.yres * fb.vinfo.bits_per_pixel / 8);
+    //close(fb.fd);
 }
 
 void draw_text(const char *text, int x, int y, Color color) {
