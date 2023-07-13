@@ -6,22 +6,10 @@ STACK_SIZE     = 61800
 endif
 
 ifeq ($(PRODUCT),)
-PRODUCT = peanutGB_Playdate.pdx
+PRODUCT = peanutGB_Linux
 endif
 
 SELF_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-
-
-SDK = ${PLAYDATE_SDK_PATH}
-ifeq ($(SDK),)
-SDK = $(shell egrep '^\s*SDKRoot' ~/.Playdate/config | head -n 1 | cut -c9-)
-endif
-
-ifeq ($(SDK),)
-$(error SDK path not found; set ENV value PLAYDATE_SDK_PATH)
-endif
-
-VPATH += $(SELF_DIR)/src $(SELF_DIR)/playdate-coroutines $(SELF_DIR)/playdate-cpp
 
 # List C source files here
 SRC += src/main.c \
@@ -29,10 +17,10 @@ SRC += src/main.c \
 	src/minigb_apu/minigb_apu.c
 
 # List all user directories here
-UINCDIR += $(VPATH)
+UINCDIR += $(SELF_DIR)/src
 
-# List all user C define here, like -D_DEBUG=1
-UDEFS += -DENABLE_SOUND -DENABLE_SOUND_MINIGB -Wno-strict-prototypes
+# List all user C defines here, like -D_DEBUG=1
+UDEFS += -DENABLE_SOUND -DENABLE_SOUND_MINIGB
 
 # Define ASM defines here
 UADEFS +=
@@ -45,4 +33,11 @@ ULIBS +=
 
 CLANGFLAGS += -fsingle-precision-constant -Wdouble-promotion
 
-include $(SDK)/C_API/buildsupport/common.mk
+CFLAGS += $(CLANGFLAGS)
+
+$(PRODUCT): $(SRC)
+	$(CC) $(CFLAGS) $(UDEFS) $(UINCDIR:%=-I%) $(LDFLAGS) -o $@ $^ $(ULIBDIR:%=-L%) $(ULIBS:%=-l%)
+
+.PHONY: clean
+clean:
+	$(RM) $(PRODUCT)
